@@ -52,16 +52,13 @@ class Sensor:
         """Mean of the vignetting polynomial over the full frame.
 
         Metashape applies ``V / mean(V)``, i.e. a correction normalised to unity mean.
-        This value is constant per sensor, so it is computed once and cached.
+        This value is constant per sensor, so it is computed once and cached; the
+        full-frame map itself is shared through :func:`rededgep.chain.vignetting_mean`.
         """
         if not self._mean_cache:
-            import numpy as np
+            from .chain import vignetting_mean
 
-            from .chain import vignetting
-
-            vv, uu = np.mgrid[0 : self.height, 0 : self.width]
-            reference = vignetting(self.vignetting, uu.astype(float), vv.astype(float), self.width, self.height)
-            self._mean_cache.append(float(reference.mean()))
+            self._mean_cache.append(vignetting_mean(self.vignetting, self.width, self.height))
         return self._mean_cache[0]
 
     def scaled(self, *, width: int, height: int) -> "Sensor":

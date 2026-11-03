@@ -26,8 +26,8 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from .calibration import Calibration, Sensor
-from .capture import Capture, STACK_ORDER
-from .chain import dn_to_radiance, dn_to_reflectance, reflectance_scale, vignetting, vignetting_mean
+from .capture import Capture, DEFAULT_WORKERS, STACK_ORDER, set_worker_count
+from .chain import clear_caches, dn_to_radiance, dn_to_reflectance, reflectance_scale, vignetting, vignetting_mean
 from .geometry import CameraPose, load_cameras_txt, project
 from .metadata import BANDS, SUFFIX_TO_BAND, ImageMeta, MetadataError, read_metadata
 from .readers import gdal_available, read_dn, read_raster
@@ -39,9 +39,12 @@ __all__ = [
     "BANDS",
     "SUFFIX_TO_BAND",
     "STACK_ORDER",
+    "DEFAULT_WORKERS",
     "Calibration",
     "Sensor",
     "Capture",
+    "set_worker_count",
+    "clear_caches",
     "ImageMeta",
     "MetadataError",
     "CameraPose",
