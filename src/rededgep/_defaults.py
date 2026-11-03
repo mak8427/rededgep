@@ -1,7 +1,7 @@
 """Built-in sensor calibration for the MicaSense RedEdge-P rig.
 
 These values were extracted from Agisoft Metashape projects (build 2.2.1) and are
-identical across every 2025 ONCERCO project examined, so they can be used as a
+identical across every 2025 Metashape project examined for this body, so they can be used as a
 sensor default when no Metashape project is available.  ``f``, ``cx`` and ``cy`` are
 in pixels; ``cx``/``cy`` are offsets from the image centre.  Vignetting coefficients
 are the Metashape model ``V = exp(sum c_ij x^i y^j)`` with x, y in [-1, 1].
