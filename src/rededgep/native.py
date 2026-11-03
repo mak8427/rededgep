@@ -63,6 +63,15 @@ def build(force: bool = False, out: Path | None = None) -> Path:
 
 def _declare(lib: ctypes.CDLL) -> None:
     double = ctypes.POINTER(ctypes.c_double)
+    lib.rp_apply_frame.restype = None
+    lib.rp_apply_frame.argtypes = [
+        ctypes.POINTER(ctypes.c_ushort),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_long,
+        ctypes.c_float,
+        ctypes.c_float,
+    ]
     lib.rp_sample_reflectance.restype = ctypes.c_long
     lib.rp_sample_reflectance.argtypes = [
         ctypes.POINTER(ctypes.c_ushort), ctypes.c_int, ctypes.c_int,
@@ -219,6 +228,34 @@ def call_kernel_geodetic(
         _ptr(out, ctypes.c_double),
     )
     return out
+
+
+def call_apply_frame(
+    dn: np.ndarray,
+    multiplier: np.ndarray,
+    out: np.ndarray,
+    black_level: float,
+    scale: float,
+) -> None:
+    """Fused ``out = max(dn - black, 0) * multiplier * scale`` in a single pass.
+
+    ``dn``, ``multiplier``, ``out`` and ``scale`` are float32 where applicable; all
+    three arrays must be C-contiguous and the same size.
+    """
+    lib = library()
+    if lib is None:
+        raise RuntimeError("native kernel not available")
+    dn = np.ascontiguousarray(dn, dtype=np.uint16)
+    multiplier = np.ascontiguousarray(multiplier, dtype=np.float32)
+    out = np.ascontiguousarray(out, dtype=np.float32)
+    lib.rp_apply_frame(
+        _ptr(dn, ctypes.c_ushort),
+        _ptr(multiplier, ctypes.c_float),
+        _ptr(out, ctypes.c_float),
+        dn.size,
+        float(black_level),
+        float(scale),
+    )
 
 
 def _main(argv: list[str]) -> int:

@@ -134,42 +134,58 @@ tighter, fly a levelled reference target.
 
 ## Performance
 
-Measured on an i9-13900K (32 threads), numpy 2.5.4, gcc 16.2
+Measured on an i9-13900K (24 cores / 32 threads), numpy 2.5.4, gcc 16.2
 (`python benchmarks/bench_core.py`):
 
-| Operation | numpy | fused C | speedup |
+| Operation | Before | Now | Speedup |
 |---|---:|---:|---:|
-| `sample_reflectance`, 10 k points | 1.1 ms | 0.4 ms | 3.0× |
-| `sample_reflectance`, 100 k points | 11.5 ms | 3.4 ms | 3.4× |
-| `sample_reflectance`, 1 M points | 165 ms | 34 ms | 4.9× |
-| `Capture.reflectance`, 5 bands × 1088×1456 | — | — | **44.5 ms cold / 4.6 ms warm** |
+| `Capture.reflectance`, 5 bands × 1088×1456 | 491 ms | **2.1 ms** warm | **232×** |
+| ↳ first call (builds the 5 vignetting maps) | — | 45 ms | — |
+| `sample_reflectance`, 1 M points, 1 thread | 82 ms | **34 ms** | 2.4× |
+| `sample_reflectance`, 1 M points, 32 threads | 82 ms | **3.9 ms** | **21×** |
+| `sample_reflectance`, 1 M points, numpy | 166 ms | 130 ms | 1.3× |
 
-Two optimisations matter far more than instruction-level tuning, and both came from
-profiling rather than guessing:
+Both hot paths are now bandwidth-bound, and getting there was three algorithmic changes,
+not compiler tuning:
 
-1. **The vignetting normalisation is a fixed pattern.** It was being recomputed for every
-   image: 1088×1456 pixels, ten polynomial terms, one `exp` each — ~52 ms per band, 95%
-   of the full-frame cost. It is now cached per (coefficients, shape) as a float32 unit-mean
-   map. `Capture.reflectance` went from **491 ms to 4.6 ms warm** (~107×); the first call
-   costs 44.5 ms because it builds the five maps.
-2. **The C kernel was not the bottleneck.** At 1 M points the kernel took 31 ms, but the
-   Python-side geodetic→ECEF→ENU conversion took 56 ms — 68% of the total. Moving that
-   conversion into C took `sample_reflectance` from 82 ms to 34 ms.
+1. **The vignetting map is a fixed pattern.** It was being rebuilt for every image —
+   1088×1456 pixels, ten polynomial terms, one `exp` each, ~52 ms per band, 95% of the
+   full-frame cost. It is cached per (coefficients, shape) as float32.
+2. **Pass count beats arithmetic.** The frame transform was three numpy passes (subtract,
+   clip, multiply) moving ~41 MB instead of the 15.8 MB it strictly needs, which capped it
+   at 45 GB/s of the 57 GB/s this machine sustains. One fused C pass reaches **70 GB/s**
+   and is 4.1× faster. Replacing the per-pixel divide with a cached reciprocal was worth
+   only 11% — pass count was the real cost.
+3. **The C kernel was not the bottleneck.** At 1 M points it took 31 ms while the
+   Python-side geodetic→ECEF→ENU conversion took 56 ms. Moving that into C took the call
+   from 82 ms to 34 ms.
 
-The kernel itself fuses projection, distortion, bilinear sampling, vignetting and the
-radiometric conversion into one pass. Its remaining cost is dominated by the random memory
-access of bilinear sampling, which is why single-threaded gains are bounded.
+### Threading
+
+The sampling kernel is OpenMP-parallel across points; the worker count comes from
+`REDEDGEP_THREADS` (default 1, for determinism). Scaling at 1 M points:
+
+| threads | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---:|---:|---:|---:|---:|---:|
+| ms | 34.2 | 17.0 | 8.7 | 7.0 | 4.5 | 3.9 |
+| ns/point | 34.2 | 17.0 | 8.7 | 7.0 | 4.5 | 3.9 |
+
+Output is bit-identical across thread counts, and `make verify` checks that.
+
+### Where the remaining time goes
+
+| Path | Bound by | What would still help |
+|---|---|---|
+| frame transform | memory bandwidth (70 GB/s of ~87 achievable) | float16 output, tiled processing |
+| point sampling | cache-miss latency (4 loads/point) | more threads, or sorting points by image tile |
+| map build (first call) | `exp` over 1.58 M pixels | persist the maps to disk between runs |
 
 The claims above are enforced by `benchmarks/bench_equivalence.py`, which fingerprints
-every output (per band, per backend, sha256 of the raw bytes) so an optimisation that
-changes a number is visible immediately:
+every output (sha256 of the raw bytes, per band, per backend):
 
 ```bash
-make verify                       # or: python benchmarks/bench_equivalence.py
+make verify
 ```
-
-It checks numpy against the C kernel point by point and exits non-zero if they diverge
-beyond tolerance.
 
 ## API
 

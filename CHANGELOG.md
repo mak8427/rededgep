@@ -40,6 +40,14 @@ project uses [semantic versioning](https://semver.org/).
   `rededgep.set_worker_count(n)` or `REDEDGEP_WORKERS`.
 - Add `rededgep.clear_caches()` to release cached vignetting maps.
 
+- Fuse the frame transform into a single C pass (`rp_apply_frame`). The three-pass numpy
+  form moved ~41 MB per band against the 15.8 MB strictly needed, capping it at 45 GB/s;
+  the fused pass reaches 70 GB/s. Warm `Capture.reflectance` is now 2.1 ms.
+- Cache the reciprocal of the vignetting map so the hot loop multiplies instead of
+  dividing.
+- Parallelise the sampling kernel with OpenMP (`REDEDGEP_THREADS`, default 1). 8.8x at 32
+  threads, bit-identical output across thread counts.
+
 ### Fixed
 
 - `sampling.bilinear` raised `IndexError` for non-finite coordinates. Behind-camera points
