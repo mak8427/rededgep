@@ -1,8 +1,9 @@
-.PHONY: help native test bench clean install
+.PHONY: help native test verify bench clean install
 
 help:
 	@echo "make native   build the optional C kernel"
 	@echo "make test     run the unit suite"
+	@echo "make verify   prove an optimisation changed only speed"
 	@echo "make bench    run the benchmarks"
 	@echo "make clean    remove build artefacts"
 
@@ -13,6 +14,9 @@ native:
 
 test:
 	python3 -m unittest discover -s tests
+
+verify:
+	python3 benchmarks/bench_equivalence.py --rebuild-native
 
 bench: native
 	python3 benchmarks/bench_core.py
