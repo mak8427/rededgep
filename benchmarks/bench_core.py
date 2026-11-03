@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import rededgep as rp  # noqa: E402
 from rededgep import native  # noqa: E402
-from rededgep.chain import vignetting  # noqa: E402
+from rededgep.chain import clear_caches, vignetting  # noqa: E402
 
 REPEATS = 5
 
@@ -109,10 +109,16 @@ def bench_full_frame() -> float:
         solar_elevation_rad=1.0, solar_azimuth_rad=3.0, width=shape[1], height=shape[0],
     ) for band in dn}
     capture = rp.Capture(name="bench", dn=dn, meta=meta)
-    t = timed(lambda: capture.reflectance(calibration), repeats=3)
+
+    # The first call builds one full-frame map per band; later captures hit the cache.
+    clear_caches()
+    t_cold = timed(lambda: capture.reflectance(calibration), repeats=1)
+    t_warm = timed(lambda: capture.reflectance(calibration), repeats=5)
     print("\nfull frame")
-    print(f"  Capture.reflectance, 5 bands x {shape[0]}x{shape[1]}: {t*1e3:8.1f} ms")
-    return t
+    print(f"  Capture.reflectance, 5 bands x {shape[0]}x{shape[1]}:")
+    print(f"    first call (builds 5 maps) : {t_cold*1e3:8.1f} ms")
+    print(f"    warm cache                 : {t_warm*1e3:8.1f} ms")
+    return t_warm
 
 
 def main() -> int:
