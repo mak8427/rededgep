@@ -38,6 +38,24 @@ class TestBilinear(unittest.TestCase):
         array = np.zeros((5, 5))
         self.assertTrue(np.isnan(bilinear(array, np.array([10.0]), np.array([0.0]))[0]))
 
+    def test_non_finite_coordinates_do_not_crash(self) -> None:
+        # Regression: NaN was cast to INT64_MIN before masking, raising IndexError.
+        # Behind-camera points produce NaN coordinates, so this crashed in normal use.
+        array = np.arange(100, dtype=float).reshape(10, 10)
+        for bad in (np.nan, np.inf, -np.inf, -1e9, 1e9):
+            result = bilinear(array, np.array([bad]), np.array([bad]))
+            self.assertTrue(np.isnan(result[0]), f"{bad} should give nan")
+
+    def test_matched_mask_with_non_finite(self) -> None:
+        array = np.arange(100, dtype=float).reshape(10, 10)
+        result = bilinear(array, np.array([np.nan, 3.0]), np.array([np.nan, 4.0]))
+        self.assertTrue(np.isnan(result[0]))
+        self.assertEqual(float(result[1]), 43.0)
+
+    def test_last_pixel_column_is_reachable(self) -> None:
+        array = np.arange(100, dtype=float).reshape(10, 10)
+        self.assertEqual(float(bilinear(array, np.array([9.0]), np.array([9.0]))[0]), 99.0)
+
 
 class TestCapture(unittest.TestCase):
     def _capture(self, bands=("Blue", "Green", "Red", "Red edge", "NIR")) -> Capture:

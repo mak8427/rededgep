@@ -26,8 +26,11 @@ def bilinear(array: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
     u = np.asarray(u, dtype=np.float64)
     v = np.asarray(v, dtype=np.float64)
     ok = np.isfinite(u) & np.isfinite(v) & (u >= 0) & (u <= width - 1) & (v >= 0) & (v <= height - 1)
-    uu = np.clip(u, 0.0, width - 1.001)
-    vv = np.clip(v, 0.0, height - 1.001)
+    # Replace invalid coordinates before flooring: casting NaN or -inf to int64 is
+    # undefined and yields INT64_MIN, which then indexes out of bounds.  The mask
+    # discards these values afterwards, but only after they have been clipped and cast.
+    uu = np.where(ok, u, 0.0)
+    vv = np.where(ok, v, 0.0)
     x0 = np.floor(uu).astype(np.int64)
     y0 = np.floor(vv).astype(np.int64)
     fx = uu - x0

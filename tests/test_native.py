@@ -51,6 +51,38 @@ class TestNativeMatchesNumpy(unittest.TestCase):
         self.assertGreater(ok.sum(), 100)
         np.testing.assert_allclose(a[ok], b[ok], rtol=1e-5, atol=1e-9)
 
+    def test_frame_edge_agrees(self) -> None:
+        # Regression: numpy clamped u/v to width-1.001 while the kernel used the exact
+        # coordinate, giving a ~0.1% disagreement in the last pixel column/row.
+        from rededgep.geometry import project
+
+        rng = np.random.default_rng(3)
+        # the frame spans roughly +-9.6 m x +-7.5 m at 20 m altitude, so sample wider
+        # than that to guarantee frame-edge points
+        lon = self.camera.lon + (rng.random(6000) - 0.5) * 3.4e-4
+        lat = self.camera.lat + (rng.random(6000) - 0.5) * 2.6e-4
+        height = np.full(lon.size, self.camera.alt - 20.0)
+        u, v = project(self.camera, self.sensor, lon, lat, height)
+        edge = np.zeros(u.size, bool)
+        finite = np.isfinite(u)
+        edge[finite] = (u[finite] < 2) | (u[finite] > 1454) | (v[finite] < 2) | (v[finite] > 1086)
+        if edge.sum() < 10:
+            self.skipTest("no frame-edge points in this sample")
+        a = sample_reflectance(self.dn, self.meta, self.sensor, self.camera, lon, lat, height, backend="numpy")
+        b = sample_reflectance(self.dn, self.meta, self.sensor, self.camera, lon, lat, height, backend="native")
+        ok = edge & np.isfinite(a) & np.isfinite(b)
+        np.testing.assert_allclose(a[ok], b[ok], rtol=1e-6, atol=1e-12)
+
+    def test_behind_camera_does_not_crash_numpy_backend(self) -> None:
+        # Regression: behind-camera points give NaN coordinates, which used to crash
+        # the numpy backend with IndexError instead of returning NaN.
+        lon = np.array([self.camera.lon, self.camera.lon + 1e-5])
+        lat = np.array([self.camera.lat, self.camera.lat])
+        height = np.array([self.camera.alt + 5.0, self.camera.alt - 20.0])
+        out = sample_reflectance(self.dn, self.meta, self.sensor, self.camera, lon, lat, height, backend="numpy")
+        self.assertTrue(np.isnan(out[0]))
+        self.assertTrue(np.isfinite(out[1]))
+
     def test_invalid_points_agree(self) -> None:
         lon = np.array([self.camera.lon + 1e-1])  # far off-frame
         lat = np.array([self.camera.lat])

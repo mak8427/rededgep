@@ -134,28 +134,42 @@ tighter, fly a levelled reference target.
 
 ## Performance
 
-Measured on 32 cores, numpy 2.5.4, gcc 16.2 (`python benchmarks/bench_core.py`):
+Measured on an i9-13900K (32 threads), numpy 2.5.4, gcc 16.2
+(`python benchmarks/bench_core.py`):
 
-| Operation | numpy | fused C |
-|---|---:|---:|
-| `sample_reflectance`, 10 k points | 1.1 ms | 0.7 ms |
-| `sample_reflectance`, 100 k points | 11.6 ms | 6.9 ms |
-| `sample_reflectance`, 1 M points | 166 ms | 81 ms |
-| `Capture.reflectance`, 5 bands × 1088×1456 | ~4–5 ms warm (~50 ms first call) | — |
+| Operation | numpy | fused C | speedup |
+|---|---:|---:|---:|
+| `sample_reflectance`, 10 k points | 1.1 ms | 0.4 ms | 3.0× |
+| `sample_reflectance`, 100 k points | 11.5 ms | 3.4 ms | 3.4× |
+| `sample_reflectance`, 1 M points | 165 ms | 34 ms | 4.9× |
+| `Capture.reflectance`, 5 bands × 1088×1456 | — | — | **44.5 ms cold / 4.6 ms warm** |
 
-The C kernel fuses projection, distortion, bilinear sampling, vignetting and the
-radiometric conversion into one pass. The speedup is bounded by the random memory access
-of bilinear sampling, not by arithmetic — which is why it is ~2× and not 20×.
+Two optimisations matter far more than instruction-level tuning, and both came from
+profiling rather than guessing:
 
-**The bigger win is algorithmic.** The vignetting is a fixed pattern per band and frame
-size, so `rededgep` builds the full-frame map once, stores it as a read-only float32
-array normalised to unit mean, and reuses it for every subsequent image. Recomputing it
-per band costs ~55 ms; a cache hit is a dictionary lookup. That is why a warm five-band
-`Capture.reflectance` is a few milliseconds instead of a few hundred, and why a flight
-loop is minutes rather than hours. The cache is bounded and can be released with
-`rededgep.chain.clear_caches()`.
+1. **The vignetting normalisation is a fixed pattern.** It was being recomputed for every
+   image: 1088×1456 pixels, ten polynomial terms, one `exp` each — ~52 ms per band, 95%
+   of the full-frame cost. It is now cached per (coefficients, shape) as a float32 unit-mean
+   map. `Capture.reflectance` went from **491 ms to 4.6 ms warm** (~107×); the first call
+   costs 44.5 ms because it builds the five maps.
+2. **The C kernel was not the bottleneck.** At 1 M points the kernel took 31 ms, but the
+   Python-side geodetic→ECEF→ENU conversion took 56 ms — 68% of the total. Moving that
+   conversion into C took `sample_reflectance` from 82 ms to 34 ms.
 
----
+The kernel itself fuses projection, distortion, bilinear sampling, vignetting and the
+radiometric conversion into one pass. Its remaining cost is dominated by the random memory
+access of bilinear sampling, which is why single-threaded gains are bounded.
+
+The claims above are enforced by `benchmarks/bench_equivalence.py`, which fingerprints
+every output (per band, per backend, sha256 of the raw bytes) so an optimisation that
+changes a number is visible immediately:
+
+```bash
+make verify                       # or: python benchmarks/bench_equivalence.py
+```
+
+It checks numpy against the C kernel point by point and exits non-zero if they diverge
+beyond tolerance.
 
 ## API
 
@@ -180,7 +194,7 @@ loop is minutes rather than hours. The cache is bounded and can be released with
 python -m unittest discover -s tests
 ```
 
-47 tests, no test dependencies, synthetic fixtures only — the suite runs anywhere.
+52 tests, no test dependencies, synthetic fixtures only — the suite runs anywhere.
 
 ---
 

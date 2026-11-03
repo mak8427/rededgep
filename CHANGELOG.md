@@ -23,6 +23,36 @@ project uses [semantic versioning](https://semver.org/).
   ~50 ms on the first call that builds the five maps (measured with
   `python benchmarks/bench_core.py`).
 
+## [Unreleased]
+
+### Performance
+
+- Cache the vignetting map per (coefficients, shape) as a float32 unit-mean array instead
+  of rebuilding a 1088x1456 polynomial for every image. `Capture.reflectance` for five
+  bands drops from ~491 ms to 4.6 ms warm (44.5 ms for the first call, which builds the
+  maps). Roughly 107x.
+- Move the geodetic to ECEF to ENU conversion into the C kernel. It accounted for 68% of
+  `sample_reflectance` at 1M points; that call now takes 34 ms instead of 82 ms, 4.9x the
+  numpy backend.
+- Build the vignetting polynomial with a cumulative power table and 1-D broadcasting
+  rather than `meshgrid` and `x**i * y**j`.
+- Parallelise `Capture.reflectance` across bands; worker count is configurable with
+  `rededgep.set_worker_count(n)` or `REDEDGEP_WORKERS`.
+- Add `rededgep.clear_caches()` to release cached vignetting maps.
+
+### Fixed
+
+- `sampling.bilinear` raised `IndexError` for non-finite coordinates. Behind-camera points
+  produce NaN, which was cast to `INT64_MIN` before masking, so the numpy backend crashed
+  instead of returning NaN.
+- `sampling.bilinear` clamped coordinates to `width - 1.001`, disagreeing with the C kernel
+  by up to 0.1% in the last pixel column and row. Both now use the exact coordinate.
+
+### Added
+
+- `benchmarks/bench_equivalence.py` (`make verify`): a deterministic pre/post-optimisation
+  harness that fingerprints every output and checks the two backends agree.
+
 ## [0.1.0] - 2026-11-03
 
 ### Added
