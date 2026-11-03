@@ -172,6 +172,30 @@ The sampling kernel is OpenMP-parallel across points; the worker count comes fro
 
 Output is bit-identical across thread counts, and `make verify` checks that.
 
+### I/O
+
+Once the maths got cheap, reading the imagery dominated: a single RedEdge-P band costs
+~8 ms from disk against 0.24 ms of reflectance work. Two changes address that.
+
+**Parallel loading.** `Capture.from_directory` reads the six bands in parallel (PIL
+releases the GIL during decode). On a warm cache, 12.9 ms becomes 7.0 ms.
+
+**Windowed sampling.** `sample_reflectance_from_file` projects the points first, then
+reads only the bounding window they touch, instead of the whole 3.2 MB frame:
+
+| | time |
+|---|---:|
+| read whole frame + sample 24 plot centres | 0.47 ms |
+| read only the window | **0.17 ms** |
+| | **2.8×** |
+
+It chooses automatically: the window is used only while the pixels saved outweigh the
+slower sampler it forces. The break-even is derived, not guessed — reading costs ~0.75 ns
+per pixel while the numpy sampler costs ~130 ns/point against the kernel's ~34 ns/point,
+so windowing wins while `(frame - window) * 0.75 > n * 96`. A million-point grid
+therefore reads the whole frame and uses the kernel (30.5 ms against 29.6 ms direct — no
+regression).
+
 ### Where the remaining time goes
 
 | Path | Bound by | What would still help |
@@ -196,6 +220,8 @@ make verify
 | `rp.Sensor` | per-band intrinsics, distortion, vignetting, black level |
 | `rp.CameraPose` | geodetic position + rotation |
 | `rp.sample_reflectance` | reflectance at arbitrary ground points, numpy or C |
+| `rp.sample_reflectance_from_file` | same, but reads only the pixels the points touch |
+| `rp.read_window` | read a pixel window without decoding the whole frame |
 | `rp.read_metadata` | EXIF + XMP → `ImageMeta` |
 | `rp.read_dn`, `rp.read_raster` | TIFF readers (GDAL when present) |
 | `rp.vignetting`, `rp.vignetting_mean` | the polynomial and its normalisation |

@@ -76,9 +76,16 @@ def _find(pattern: str, text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _float(value: str | None, default: float = float("nan")) -> float:
+def _float(value, default: float = float("nan")) -> float:
+    """Coerce an XMP string, a number, or a ``(numerator, denominator)`` rational."""
+    if value is None:
+        return default
+    if isinstance(value, tuple):
+        if len(value) == 2 and value[1]:
+            return float(value[0]) / float(value[1])
+        return default
     try:
-        return float(value) if value is not None else default
+        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -164,11 +171,13 @@ def read_metadata(path: str | Path) -> ImageMeta:
     if not (iso == iso) or iso <= 0:
         raise MetadataError(f"no ISO tag in {path}")
 
-    exposure = _float(exif_ifd.get(_EXPOSURE_TAG))
+    # Some writers put these in the Exif sub-IFD, others in the top-level IFD; accept
+    # either, which is what the ISO lookup already did.
+    exposure = _float(exif_ifd.get(_EXPOSURE_TAG) or exif.get(_EXPOSURE_TAG))
     if not (exposure == exposure) or exposure <= 0:
         raise MetadataError(f"no exposure time in {path}")
 
-    black = exif.get(_BLACK_LEVEL_TAG)
+    black = exif_ifd.get(_BLACK_LEVEL_TAG) or exif.get(_BLACK_LEVEL_TAG)
     if isinstance(black, (tuple, list)) and black:
         black = sum(float(v) for v in black) / len(black)
     black_level = _float(black, 0.0)

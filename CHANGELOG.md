@@ -48,8 +48,19 @@ project uses [semantic versioning](https://semver.org/).
 - Parallelise the sampling kernel with OpenMP (`REDEDGEP_THREADS`, default 1). 8.8x at 32
   threads, bit-identical output across thread counts.
 
+### Added
+
+- `read_window` / `read_dn_window`: read a pixel window without decoding the whole frame.
+- `sample_reflectance_from_file`: reflectance at ground points, reading only the pixels
+  they touch. 2.8x faster than loading the frame for plot-scale sampling, and it falls
+  back to the full frame plus the C kernel when the points cover most of the image.
+- `Capture.from_directory` reads the six bands in parallel (~1.8x).
+
 ### Fixed
 
+- `read_metadata` only looked for the exposure time and black level in the Exif sub-IFD
+  and never fell back to the top-level IFD, so files written that way were rejected.
+  It also did not accept `(numerator, denominator)` rationals.
 - `sampling.bilinear` raised `IndexError` for non-finite coordinates. Behind-camera points
   produce NaN, which was cast to `INT64_MIN` before masking, so the numpy backend crashed
   instead of returning NaN.
