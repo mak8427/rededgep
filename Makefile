@@ -8,7 +8,7 @@ help:
 
 native:
 	@command -v gcc >/dev/null || { echo "gcc not found"; exit 1; }
-	gcc -O3 -march=native -shared -fPIC -o src/rededgep/librededgep.so src/rededgep/_native.c -lm
+	gcc -O3 -march=native -funroll-loops -fno-math-errno -shared -fPIC -o src/rededgep/librededgep.so src/rededgep/_native.c -lm
 	@echo "built src/rededgep/librededgep.so"
 
 test:
