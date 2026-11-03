@@ -91,17 +91,11 @@ def sample_reflectance(
 
     use_native = backend == "native" or (backend == "auto" and native.available())
     if use_native:
-        centre = geometry.lla_to_ecef(camera.lon, camera.lat, camera.alt)
-        local = np.einsum(
-            "ij,...j->...i",
-            geometry.enu_basis(camera.lon, camera.lat),
-            geometry.lla_to_ecef(lon, lat, height) - centre,
-        )
-        east = np.ascontiguousarray(local[..., 0].ravel())
-        north = np.ascontiguousarray(local[..., 1].ravel())
-        up = np.ascontiguousarray(local[..., 2].ravel())
-        out = native.call_kernel(
-            dn, east, north, up, camera.rotation,
+        # The kernel does the geodetic -> ECEF -> camera conversion itself, so the only
+        # per-point Python work left is flattening the input arrays.
+        out = native.call_kernel_geodetic(
+            dn, lon, lat, height,
+            camera.lon, camera.lat, camera.alt, camera.rotation,
             sensor.focal_px, sensor.cx, sensor.cy,
             (sensor.k1, sensor.k2, sensor.k3, sensor.p1, sensor.p2),
             sensor.vignetting, sensor.vignetting_mean(), meta.black_level,
@@ -109,6 +103,8 @@ def sample_reflectance(
         )
         return out.reshape(lon.shape)
 
+    if lat.size != lon.size or height.size != lon.size:
+        raise ValueError("lon, lat and height must have the same size")
     u, v = geometry.project(camera, sensor, lon, lat, height)
     values = bilinear(np.asarray(dn), u, v)
     return dn_to_reflectance(values, meta, sensor, u, v)
