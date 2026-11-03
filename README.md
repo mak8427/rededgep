@@ -136,21 +136,24 @@ tighter, fly a levelled reference target.
 
 Measured on 32 cores, numpy 2.5.4, gcc 16.2 (`python benchmarks/bench_core.py`):
 
-| Operation | numpy | fused C | speedup |
-|---|---:|---:|---:|
-| `sample_reflectance`, 10 k points | 1.4 ms | 0.7 ms | 2.0× |
-| `sample_reflectance`, 100 k points | 14.2 ms | 7.0 ms | 2.0× |
-| `sample_reflectance`, 1 M points | 184 ms | 82 ms | 2.2× |
-| `Capture.reflectance`, 5 bands × 1088×1456 | — | — | 410 ms |
+| Operation | numpy | fused C |
+|---|---:|---:|
+| `sample_reflectance`, 10 k points | 1.1 ms | 0.7 ms |
+| `sample_reflectance`, 100 k points | 11.6 ms | 6.9 ms |
+| `sample_reflectance`, 1 M points | 166 ms | 81 ms |
+| `Capture.reflectance`, 5 bands × 1088×1456 | ~4–5 ms warm (~50 ms first call) | — |
 
 The C kernel fuses projection, distortion, bilinear sampling, vignetting and the
 radiometric conversion into one pass. The speedup is bounded by the random memory access
 of bilinear sampling, not by arithmetic — which is why it is ~2× and not 20×.
 
-**The bigger win is algorithmic.** The vignetting normalisation is a mean over a
-1088×1456 polynomial. Recomputing it per call costs **76 ms**; cached it is a dict lookup.
-In a per-observation loop over a flight that is the difference between minutes and hours.
-`rededgep` caches it per sensor.
+**The bigger win is algorithmic.** The vignetting is a fixed pattern per band and frame
+size, so `rededgep` builds the full-frame map once, stores it as a read-only float32
+array normalised to unit mean, and reuses it for every subsequent image. Recomputing it
+per band costs ~55 ms; a cache hit is a dictionary lookup. That is why a warm five-band
+`Capture.reflectance` is a few milliseconds instead of a few hundred, and why a flight
+loop is minutes rather than hours. The cache is bounded and can be released with
+`rededgep.chain.clear_caches()`.
 
 ---
 
@@ -166,6 +169,8 @@ In a per-observation loop over a flight that is the difference between minutes a
 | `rp.read_metadata` | EXIF + XMP → `ImageMeta` |
 | `rp.read_dn`, `rp.read_raster` | TIFF readers (GDAL when present) |
 | `rp.vignetting`, `rp.vignetting_mean` | the polynomial and its normalisation |
+| `rp.clear_caches` | release cached full-frame vignetting maps |
+| `rp.set_worker_count` | tune band-level parallelism in `Capture.reflectance` |
 
 ---
 
